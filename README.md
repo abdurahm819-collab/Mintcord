@@ -10,13 +10,19 @@ From the extracted repository folder, double-click `install.sh` or run:
 ./install.sh
 ```
 
-The graphical installer checks the required Python/GTK packages, requests administrator permission only when needed, installs Mintcord to `/opt/mintcord`, and adds Mintcord to the application menu. The Uninstall button removes application files while preserving user settings and local data.
+If the GTK 3 Python bindings are missing, the launcher first requests permission to install them, then opens the graphical installer. The installer installs Mintcord under `/opt/mintcord`, adds a desktop-menu shortcut, and includes an Uninstall option. It keeps personal settings and local data.
 
-If the graphical installer cannot start because GTK's Python bindings are missing, run this one-time bootstrap command:
+If double-clicking does not run the script, right-click `install.sh`, choose Properties → Permissions, and enable “Allow this file to run as a program”. You can also run it from a terminal with `bash install.sh`.
 
-```bash
-sudo apt update && sudo apt install python3 python3-gi gir1.2-gtk-3.0
-```
+## Current interface
+
+- Users, Chat, and Emojis tabs.
+- Sample contacts and status settings.
+- Local demonstration messages and simulated call windows.
+- Background photos and colours.
+- Desktop notifications and a local file-selection demonstration.
+
+**Real messaging, real voice/audio, accounts, peer-to-peer networking, and encryption are not implemented yet.** Do not use this prototype for private communication.
 
 ## Run from source
 
@@ -24,15 +30,12 @@ sudo apt update && sudo apt install python3 python3-gi gir1.2-gtk-3.0
 python3 app/main.py
 ```
 
-## Current application status
+## Development checks
 
-The v0.5 interface includes sample contacts, local demonstration chats, simulated call windows, settings, backgrounds, emojis, and desktop notifications. Real network messaging, real microphone/audio, file transfer, accounts, peer-to-peer discovery, and encryption are **not implemented yet**. Do not use this prototype for private communication.
-
-## Dependencies
-
-- Python 3
-- PyGObject / GTK 3
-- Linux Mint or another GTK 3 desktop
+```bash
+python3 -m compileall -q app installer
+bash -n install.sh installer/install_system.sh installer/uninstall_system.sh
+```
 
 ## License
 
