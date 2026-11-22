@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Mintcord graphical installer for Linux Mint / Ubuntu-based desktops."""
 import subprocess
+import tempfile
 from pathlib import Path
 
 import gi
@@ -9,15 +10,18 @@ from gi.repository import Gtk, GLib, GdkPixbuf
 
 REQUIRED = ["python3", "python3-gi", "gir1.2-gtk-3.0"]
 
+
 class Installer(Gtk.Window):
     def __init__(self):
         super().__init__(title="Mintcord Installer")
         self.set_border_width(18)
-        self.set_default_size(480, 390)
+        self.set_default_size(500, 420)
         self.set_resizable(False)
         self.set_position(Gtk.WindowPosition.CENTER)
         self.source = Path(__file__).resolve().parent.parent
         self.process = None
+        self.process_log = None
+        self.process_log_path = None
         self.steps = []
         self.step_index = 0
         self.uninstalling = False
@@ -27,11 +31,11 @@ class Installer(Gtk.Window):
         icon_path = self.source / "assets" / "mintcord.svg"
         if icon_path.exists():
             try:
-                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(icon_path), 88, 88, True)
+                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(icon_path), 112, 112, True)
                 image = Gtk.Image.new_from_pixbuf(pix)
                 image.set_halign(Gtk.Align.CENTER)
                 outer.pack_start(image, False, False, 0)
-            except Exception:
+            except GLib.Error:
                 pass
 
         title = Gtk.Label()
@@ -41,7 +45,7 @@ class Installer(Gtk.Window):
         subtitle.get_style_context().add_class("dim-label")
         outer.pack_start(subtitle, False, False, 0)
 
-        self.status = Gtk.Label(label="Ready. The installer will check dependencies first.")
+        self.status = Gtk.Label(label="Ready. Select Install Mintcord to begin.")
         self.status.set_xalign(0)
         self.status.set_line_wrap(True)
         outer.pack_start(self.status, False, False, 4)
@@ -55,9 +59,12 @@ class Installer(Gtk.Window):
         self.progress.set_text("Waiting")
         outer.pack_start(self.progress, False, False, 0)
 
-        self.log = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD_CHAR)
-        self.log.set_size_request(-1, 90)
-        self.log.get_buffer().set_text("Application files: /opt/mintcord\nPersonal settings and data are kept in your home folder.")
+        self.log = Gtk.TextView(editable=False, cursor_visible=False,
+                                wrap_mode=Gtk.WrapMode.WORD_CHAR)
+        self.log.set_size_request(-1, 100)
+        self.log.get_buffer().set_text(
+            "Application files: /opt/mintcord\n"
+            "Personal settings and data are kept in your home folder.")
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         scroll.add(self.log)
@@ -108,7 +115,9 @@ class Installer(Gtk.Window):
             self.spinner.stop()
             self.progress.set_fraction(1)
             self.progress.set_text("Complete")
-            self.status.set_text("Mintcord was removed. Your personal data was preserved." if self.uninstalling else "Mintcord installation completed.")
+            self.status.set_text(
+                "Mintcord was removed. Your personal data was preserved."
+                if self.uninstalling else "Mintcord installation completed.")
             self.write_log("Finished successfully.")
             self.install_button.set_sensitive(True)
             self.uninstall_button.set_sensitive(Path("/opt/mintcord").exists())
@@ -120,9 +129,13 @@ class Installer(Gtk.Window):
         self.progress.set_text(f"Step {self.step_index + 1} of {len(self.steps)}")
         self.write_log(label)
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+            self.process_log = tempfile.NamedTemporaryFile(
+                mode="w+", prefix="mintcord-installer-", suffix=".log", delete=False)
+            self.process_log_path = self.process_log.name
+            self.process = subprocess.Popen(
+                command, stdout=self.process_log, stderr=subprocess.STDOUT)
         except Exception as exc:
-            self.fail(str(exc))
+            self.fail(f"Could not start command: {exc}")
             return False
         GLib.timeout_add(250, self.poll_process)
         return False
@@ -133,9 +146,21 @@ class Installer(Gtk.Window):
         code = self.process.poll()
         if code is None:
             return True
+
+        if self.process_log:
+            self.process_log.flush()
+            self.process_log.close()
+            self.process_log = None
+
         if code != 0:
-            self.fail(f"Command failed (exit code {code}). Check permissions and your internet connection.")
+            details = ""
+            try:
+                details = Path(self.process_log_path).read_text(errors="replace")[-1800:]
+            except (OSError, TypeError):
+                pass
+            self.fail(f"Command exited with code {code}.\n{details.strip() or 'No error output was returned. Check whether the administrator prompt was cancelled.'}")
             return False
+
         self.step_index += 1
         self.progress.set_fraction(self.step_index / max(1, len(self.steps)))
         GLib.idle_add(self.run_next)
@@ -143,29 +168,44 @@ class Installer(Gtk.Window):
 
     def fail(self, message):
         self.spinner.stop()
-        self.status.set_text("Operation failed.")
+        self.status.set_text("Operation failed. See details below.")
         self.progress.set_text("Failed")
         self.write_log(message)
         self.install_button.set_sensitive(True)
         self.uninstall_button.set_sensitive(Path("/opt/mintcord").exists())
         self.close_button.set_sensitive(True)
+        if self.process_log:
+            self.process_log.close()
+            self.process_log = None
 
     def start_install(self, _button):
         if not (self.source / "app" / "main.py").is_file():
-            self.fail("Run the installer from the extracted Mintcord project folder.")
+            self.fail("Run install.sh from the extracted Mintcord project folder.")
             return
+        if not (self.source / "assets" / "mintcord.svg").is_file():
+            self.fail("The Mintcord logo is missing from assets/mintcord.svg.")
+            return
+        if not shutil_which("pkexec"):
+            self.fail("pkexec is missing. Install the Linux PolicyKit authentication helper, then retry.")
+            return
+
         missing = []
         for package in REQUIRED:
-            check = subprocess.run(["dpkg-query", "-W", "-f=${Status}", package],
-                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            check = subprocess.run(
+                ["dpkg-query", "-W", "-f=${Status}", package],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
             if "install ok installed" not in check.stdout:
                 missing.append(package)
+
         steps = []
         if missing:
-            steps.append(("Refreshing package lists (administrator permission required)…", ["pkexec", "apt-get", "update"]))
-            steps.append(("Installing missing system dependencies…", ["pkexec", "apt-get", "install", "-y"] + missing))
+            steps.append(("Refreshing package lists (administrator permission required)…",
+                          ["pkexec", "apt-get", "update"]))
+            steps.append(("Installing missing system dependencies…",
+                          ["pkexec", "apt-get", "install", "-y"] + missing))
         steps.append(("Installing Mintcord and creating its application-menu shortcut…",
-                      ["pkexec", "bash", str(self.source / "installer" / "install_system.sh"), str(self.source)]))
+                      ["pkexec", "bash", str(self.source / "installer" / "install_system.sh"),
+                       str(self.source)]))
         self.run_steps(steps)
 
     def start_uninstall(self, _button):
@@ -173,14 +213,24 @@ class Installer(Gtk.Window):
         if not helper.is_file():
             self.fail("The installed uninstaller was not found. Reinstall Mintcord first.")
             return
-        dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.WARNING,
-                                   buttons=Gtk.ButtonsType.CANCEL, text="Uninstall Mintcord?")
-        dialog.format_secondary_text("The application will be removed. Your settings and local data in your home folder will be kept.")
+        dialog = Gtk.MessageDialog(
+            transient_for=self, modal=True, message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.CANCEL, text="Uninstall Mintcord?")
+        dialog.format_secondary_text(
+            "The application will be removed. Your settings and local data in your home folder will be kept.")
         dialog.add_button("Uninstall", Gtk.ResponseType.ACCEPT)
         answer = dialog.run()
         dialog.destroy()
         if answer == Gtk.ResponseType.ACCEPT:
-            self.run_steps([("Removing Mintcord application files…", ["pkexec", "bash", str(helper)])], uninstall=True)
+            self.run_steps(
+                [("Removing Mintcord application files…",
+                  ["pkexec", "bash", str(helper)])], uninstall=True)
+
+
+def shutil_which(command):
+    from shutil import which
+    return which(command)
+
 
 if __name__ == "__main__":
     win = Installer()
