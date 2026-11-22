@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Mintcord application entry point.
+"""Entry point for the restored Mintcord v0.5 GTK prototype."""
 
-This currently launches the original GTK prototype. Calls and messages are
-local UI demonstrations only; no network transport is implemented yet.
-"""
-from prototype import main
+from gi.repository import Gtk
+from prototype import Mintcord
+
+
+def main():
+    window = Mintcord()
+    window.connect("destroy", Gtk.main_quit)
+    window.show_all()
+    Gtk.main()
 
 
 if __name__ == "__main__":
