@@ -1,41 +1,47 @@
 # Mintcord
 
-**Free and open-source desktop messaging and voice-calling project for Linux Mint.**
+**Free and open-source desktop messaging prototype for Linux Mint.**
 
-Mintcord is an early-stage Python/GTK application. The current interface is a prototype: its sample contacts, chat messages, and call states are local demonstrations. Real networking, peer discovery, and voice calling are **not implemented yet**.
+Mintcord is a Python 3 + GTK 3 desktop application. The project currently uses the restored **v0.5 interface** from the original prototype. It is a local GUI demonstration, not yet a network messaging or calling service.
 
-## Project goals
+## Current interface features
 
-- Native Linux Mint desktop experience using GTK 3.
-- Peer-to-peer communication where network conditions permit.
-- Encrypted voice communication using established, audited protocols and libraries.
-- No phone-number requirement.
-- A self-contained installer with dependency and desktop-integration checks.
-- No dependency on the user's icon or emoji theme for essential controls.
-- Free and open-source development under GPL-3.0.
+- Users, Chat, and Emojis tabs.
+- Sample contacts with Online, Away, Busy, Idle, Invisible, and Offline statuses.
+- Simulated incoming and outgoing call windows.
+- A microphone button that toggles the interface's mute indicator.
+- Status settings, per-status notification preferences, and automatic-reply text.
+- Main-window, all-chat, and per-chat photo backgrounds.
+- Per-chat background colours.
+- Desktop message notifications for simulated incoming messages.
+- File chooser that records a selected file in the local chat UI.
+- Settings saved in `~/.config/mintcord/settings.json`.
 
-## Current status
+## Important: what does not work yet
 
-| Feature | Status |
+The current version does **not** provide real communication:
+
+| Feature | Current state |
 |---|---|
-| GTK 3 prototype interface | Available |
-| Sample contacts and local chat UI | Demonstration only |
-| Real user accounts | Not implemented |
-| Network messaging | Not implemented |
-| Peer-to-peer signaling / discovery | Not implemented |
-| Real voice calls | Not implemented |
-| Audio encryption | Not implemented |
-| Installer and uninstaller | Initial development scripts |
+| Contacts | Sample users only |
+| Chat messages | Local demonstration; not sent to another computer |
+| Incoming messages | Simulated test events |
+| Voice calls | Simulated call windows; no audio or network connection |
+| Microphone mute | Changes the UI mute flag only; no microphone capture exists |
+| File sending | Selects a local file and adds a local chat entry; no transfer occurs |
+| Accounts / sign-in | Not implemented |
+| Peer-to-peer networking | Not implemented |
+| Encryption | Not implemented |
 
-Do not use this prototype for private or sensitive communication. It does not currently transmit messages or calls between computers.
+Do not use this prototype for private or sensitive communication. Do not interpret the call timer or microphone indicator as evidence that a real call or audio session exists.
 
 ## Requirements
 
-- Linux Mint (GTK 3 desktop)
+- Linux Mint or another GTK 3 desktop
 - Python 3
-- PyGObject / GTK 3 bindings
+- PyGObject with GTK 3, GDK 3, and GdkPixbuf 2 bindings
 
-On Linux Mint, the GTK bindings are normally supplied by the system packages:
+On Linux Mint, install the system dependencies with:
 
 ```bash
 sudo apt update
@@ -44,9 +50,13 @@ sudo apt install python3 python3-gi gir1.2-gtk-3.0
 
 ## Run from source
 
+From the repository root:
+
 ```bash
 python3 app/main.py
 ```
+
+The main interface source is `app/prototype.py`.
 
 ## Install
 
@@ -56,24 +66,32 @@ From the repository root:
 ./install.sh
 ```
 
-The installer checks for Linux Mint and required GTK/Python components, asks before installing missing system packages, and creates the application directory layout. It uses `/opt/mintcord` for application files and keeps user data under the user's home directory.
+The installer checks for the required GTK/Python packages and installs the application under `/opt/mintcord`. It creates a desktop launcher named Mintcord.
 
-Uninstall:
+To uninstall:
 
 ```bash
 sudo /opt/mintcord/installer/uninstall.sh
 ```
 
-User data is preserved unless explicitly removed.
+The uninstall script preserves user data under the home directory.
 
-## Security and privacy
+## Development checks
 
-The current prototype has no network transport and no end-to-end encryption implementation. Security claims will only be made after the relevant protocols are implemented, tested, and independently reviewed. See [SECURITY.md](SECURITY.md).
+Check Python syntax without launching the GUI:
 
-## Contributing
+```bash
+python3 -m compileall -q app
+```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and carefully scoped contributions are welcome.
+The GTK interface must be launched on a graphical GTK 3 desktop for a manual UI test.
+
+## Project direction
+
+The next major development stage is real messaging and voice calling. The planned direction is peer-to-peer communication where network conditions allow, with established protocols and maintained libraries for transport and encryption. Direct peer-to-peer connections are not guaranteed on every network and may require signaling and relay infrastructure.
+
+No networking, audio transport, or encryption is included in this release.
 
 ## License
 
-Mintcord is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).
+Mintcord is free and open-source software under the GNU General Public License v3.0. See [LICENSE](LICENSE).
