@@ -1,0 +1,2 @@
+# GTK/PyGObject is provided by Linux Mint system packages.
+# Keep this file for future pure-Python runtime dependencies.
