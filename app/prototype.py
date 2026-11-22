@@ -116,8 +116,8 @@ class Settings:
             "status": "Online",
             "auto": dict(DEFAULT_AUTO),
             "notify": dict(DEFAULT_NOTIFY),
-            "backgrounds": {},
-            "images": {},
+            "backgrounds": {},  # chat name -> colour
+            "images": {},       # chat name / MAIN_KEY / CHATS_KEY -> photo path
         }
         try:
             with open(CONFIG) as f:
@@ -146,7 +146,7 @@ class ImageBackground(Gtk.DrawingArea):
         super().__init__(hexpand=True, vexpand=True)
         self.path = None
         self.pixbuf = None
-        self._cache = (None, None)
+        self._cache = (None, None)  # ((w, h), scaled pixbuf)
         self.connect("draw", self._on_draw)
 
     def set_image(self, path):
@@ -186,6 +186,7 @@ class ImageBackground(Gtk.DrawingArea):
 
 
 def with_background(child):
+    """Put `child` on top of an ImageBackground. Returns (container, background)."""
     overlay = Gtk.Overlay()
     bg = ImageBackground()
     overlay.add(bg)
@@ -194,6 +195,7 @@ def with_background(child):
 
 
 def big_button(icon, text, size=96):
+    """A large icon button with a caption underneath."""
     btn = Gtk.Button()
     btn.set_relief(Gtk.ReliefStyle.NONE)
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -206,23 +208,29 @@ def big_button(icon, text, size=96):
 
 
 class MicButton(Gtk.Button):
+    """Mic icon that toggles the app-wide mute flag and shows a red line when muted."""
+
     def __init__(self, app):
         super().__init__()
         self.app = app
         self.set_relief(Gtk.ReliefStyle.NONE)
+
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         overlay = Gtk.Overlay()
         img = Gtk.Image.new_from_icon_name("input-audio-microphone", Gtk.IconSize.DIALOG)
         img.set_pixel_size(64)
         overlay.add(img)
+
         self.slash = Gtk.DrawingArea()
         self.slash.connect("draw", self._draw_slash)
         overlay.add_overlay(self.slash)
         overlay.set_overlay_pass_through(self.slash, True)
+
         self.label = Gtk.Label()
         box.pack_start(overlay, False, False, 0)
         box.pack_start(self.label, False, False, 0)
         self.add(box)
+
         self.connect("clicked", self._toggle)
         self._refresh()
 
@@ -239,8 +247,9 @@ class MicButton(Gtk.Button):
     def _draw_slash(self, area, cr):
         if not self.app.muted:
             return False
-        w, h = area.get_allocated_width(), area.get_allocated_height()
-        cr.set_line_cap(1)
+        w = area.get_allocated_width()
+        h = area.get_allocated_height()
+        cr.set_line_cap(1)  # round
         for rgba, width in (((1, 1, 1, 0.9), 11), ((0.9, 0.1, 0.1, 1), 7)):
             cr.set_source_rgba(*rgba)
             cr.set_line_width(width)
@@ -251,6 +260,8 @@ class MicButton(Gtk.Button):
 
 
 class CallWindow(Gtk.Window):
+    """Outgoing call (you see Stop) or incoming call (you see Accept/Deny)."""
+
     def __init__(self, app, name, icon, incoming):
         super().__init__(title=f"Call - {name}")
         self.app = app
@@ -260,19 +271,24 @@ class CallWindow(Gtk.Window):
         self.icon = icon
         self.seconds = 0
         self.sources = set()
+
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.set_border_width(20)
         self.add(box)
+
         who = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
         who.pack_start(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR), False, False, 0)
         title = Gtk.Label()
         title.set_markup(f"<big><b>{GLib.markup_escape_text(name)}</b></big>")
         who.pack_start(title, False, False, 0)
         box.pack_start(who, False, False, 0)
+
         self.status = Gtk.Label()
         box.pack_start(self.status, False, False, 0)
+
         self.btn_box = Gtk.Box(spacing=30, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
         box.pack_start(self.btn_box, True, True, 0)
+
         if incoming:
             self.status.set_text("Incoming call...")
             self._show_incoming()
@@ -280,13 +296,16 @@ class CallWindow(Gtk.Window):
             self.status.set_text("Calling...")
             self._show_stop()
             self._after(ANSWER_DELAY, self._npc_answers)
+
         self.connect("destroy", self._cleanup)
 
+    # ----- buttons -----
     def _clear_buttons(self):
         for child in self.btn_box.get_children():
             self.btn_box.remove(child)
 
     def _show_stop(self):
+        """Mic button next to the big end-call button, centred on the same line."""
         self._clear_buttons()
         mic = MicButton(self.app)
         mic.set_valign(Gtk.Align.CENTER)
@@ -307,6 +326,7 @@ class CallWindow(Gtk.Window):
         self.btn_box.pack_start(deny, False, False, 0)
         self.btn_box.show_all()
 
+    # ----- call state -----
     def _npc_answers(self):
         if self.icon in NO_ANSWER_ICONS:
             self.status.set_text("No answer")
@@ -315,7 +335,7 @@ class CallWindow(Gtk.Window):
 
     def _connected(self):
         self._update_time()
-        self._show_stop()
+        self._show_stop()  # stop (and mic) stay after the call is accepted
         self.sources.add(GLib.timeout_add_seconds(1, self._tick))
 
     def _tick(self):
@@ -327,12 +347,15 @@ class CallWindow(Gtk.Window):
         m, s = divmod(self.seconds, 60)
         self.status.set_text(f"Connected  {m:02d}:{s:02d}")
 
+    # ----- timers -----
     def _after(self, seconds, fn):
         holder = []
+
         def run():
             self.sources.discard(holder[0])
             fn()
             return False
+
         holder.append(GLib.timeout_add_seconds(seconds, run))
         self.sources.add(holder[0])
 
@@ -343,6 +366,8 @@ class CallWindow(Gtk.Window):
 
 
 class SettingsWindow(Gtk.Window):
+    """My status, actions for each status, backgrounds for the menu and chats."""
+
     def __init__(self, app):
         super().__init__(title=f"{APP_NAME} - Settings")
         self.app = app
@@ -350,14 +375,18 @@ class SettingsWindow(Gtk.Window):
         self.set_default_size(560, 700)
         self.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
         self.set_icon_name(app.settings_icon)
+
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         outer.set_border_width(10)
         self.add(outer)
+
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         content.set_border_width(6)
         scroll = Gtk.ScrolledWindow()
         scroll.add(content)
         outer.pack_start(scroll, True, True, 0)
+
+        # --- my status ---
         content.pack_start(self._header("My status"), False, False, 0)
         store = Gtk.ListStore(str, str)
         for label, icon in STATUSES:
@@ -372,11 +401,15 @@ class SettingsWindow(Gtk.Window):
         combo.set_active([s[0] for s in STATUSES].index(app.settings.data["status"]))
         combo.connect("changed", lambda c: app.set_status(STATUSES[c.get_active()][0]))
         content.pack_start(combo, False, False, 0)
+
+        # --- actions for each status ---
         content.pack_start(self._header("Actions for each status"), False, False, 0)
-        hint = Gtk.Label(label="What happens when someone messages or calls you while you are on that status. Leave the reply empty to turn it off.", xalign=0)
+        hint = Gtk.Label(label="What happens when someone messages or calls you while you are on "
+                               "that status. Leave the reply empty to turn it off.", xalign=0)
         hint.set_line_wrap(True)
         hint.get_style_context().add_class("dim-label")
         content.pack_start(hint, False, False, 0)
+
         grid = Gtk.Grid(column_spacing=10, row_spacing=6)
         grid.attach(Gtk.Label(label="Notifications"), 2, 0, 1, 1)
         grid.attach(Gtk.Label(label="Automatic reply", xalign=0), 3, 0, 1, 1)
@@ -393,6 +426,8 @@ class SettingsWindow(Gtk.Window):
             entry.connect("changed", self._on_auto_changed, label)
             grid.attach(entry, 3, i, 1, 1)
         content.pack_start(grid, False, False, 0)
+
+        # --- backgrounds ---
         content.pack_start(self._header("Backgrounds"), False, False, 0)
         bg = Gtk.Grid(column_spacing=10, row_spacing=6)
         self._add_bg_row(bg, 0, MAIN_KEY, "go-home", "Main menu", False)
@@ -400,10 +435,12 @@ class SettingsWindow(Gtk.Window):
         for i, (name, icon, _status) in enumerate(TEST_USERS, start=2):
             self._add_bg_row(bg, i, name, icon, name, True)
         content.pack_start(bg, False, False, 0)
-        note = Gtk.Label(label='A photo or colour set for one chat wins over the "All chats" photo.', xalign=0)
+        note = Gtk.Label(label="A photo or colour set for one chat wins over the \"All chats\" photo.",
+                         xalign=0)
         note.set_line_wrap(True)
         note.get_style_context().add_class("dim-label")
         content.pack_start(note, False, False, 0)
+
         close = Gtk.Button(label="Close")
         close.connect("clicked", lambda _b: self.destroy())
         outer.pack_start(close, False, False, 0)
@@ -423,7 +460,8 @@ class SettingsWindow(Gtk.Window):
         self.app.settings.save()
 
     def _choose_image(self):
-        dlg = Gtk.FileChooserDialog(title="Choose a photo", transient_for=self, action=Gtk.FileChooserAction.OPEN)
+        dlg = Gtk.FileChooserDialog(title="Choose a photo", transient_for=self,
+                                    action=Gtk.FileChooserAction.OPEN)
         dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Choose", Gtk.ResponseType.OK)
         flt = Gtk.FileFilter()
         flt.set_name("Images")
@@ -436,14 +474,17 @@ class SettingsWindow(Gtk.Window):
     def _add_bg_row(self, grid, row, key, icon, label, with_color):
         data = self.app.settings.data
         images, colors = data["images"], data["backgrounds"]
+
         grid.attach(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.BUTTON), 0, row, 1, 1)
         grid.attach(Gtk.Label(label=label, xalign=0, hexpand=True), 1, row, 1, 1)
+
         picker = None
         if with_color:
             rgba = Gdk.RGBA()
             rgba.parse(colors.get(key) or "#ffffff")
             picker = Gtk.ColorButton.new_with_rgba(rgba)
             grid.attach(picker, 2, row, 1, 1)
+
         photo = Gtk.Button(label=os.path.basename(images[key]) if key in images else "Choose photo...")
         photo.get_child().set_max_width_chars(16)
         photo.get_child().set_ellipsize(Pango.EllipsizeMode.END)
@@ -456,15 +497,18 @@ class SettingsWindow(Gtk.Window):
             self.app.settings.save()
             reset.set_sensitive(key in images or key in colors)
             self.app.refresh_backgrounds()
+
         def on_color(_b):
             colors[key] = to_hex(picker.get_rgba())
             changed()
+
         def on_photo(_b):
             path = self._choose_image()
             if path:
                 images[key] = path
                 photo.set_label(os.path.basename(path))
                 changed()
+
         def on_reset(_b):
             images.pop(key, None)
             colors.pop(key, None)
@@ -474,6 +518,7 @@ class SettingsWindow(Gtk.Window):
                 white.parse("#ffffff")
                 picker.set_rgba(white)
             changed()
+
         if picker is not None:
             picker.connect("color-set", on_color)
         photo.connect("clicked", on_photo)
@@ -485,15 +530,6 @@ class Mintcord(Gtk.Window):
         super().__init__(title=APP_NAME)
         self.set_default_size(560, 520)
         self.set_icon_name("user-info")
-        self.settings = Settings()
-        self.settings_icon = theme_icon("unity-tweak-tool", "preferences-system")
-        self.buffers = {}
-        self.current = None
-        self.call_win = None
-        self.settings_win = None
-        self.muted = False
-
-        # Use the same project icon when running from source or after installation.
         icon_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "mintcord.svg"))
         if not os.path.isfile(icon_path):
             icon_path = "/opt/mintcord/assets/mintcord.svg"
@@ -502,10 +538,18 @@ class Mintcord(Gtk.Window):
                 self.set_icon_from_file(icon_path)
             except GLib.Error:
                 pass
+        self.settings = Settings()
+        self.settings_icon = theme_icon("unity-tweak-tool", "preferences-system")
+        self.buffers = {}    # user name -> Gtk.TextBuffer
+        self.current = None  # (name, icon) of the open chat
+        self.call_win = None
+        self.settings_win = None
+        self.muted = False   # app-wide mic mute (real audio will check this)
 
         self.css = Gtk.CssProvider()
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(), self.css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
         self.notebook = Gtk.Notebook()
         self.add(self.notebook)
         self.notebook.append_page(self._build_users_tab(), Gtk.Label(label="Users"))
@@ -514,50 +558,67 @@ class Mintcord(Gtk.Window):
         self.notebook.set_action_widget(self._build_top_right(), Gtk.PackType.END)
         self.refresh_backgrounds()
 
+    # ---------- Backgrounds ----------
     def refresh_backgrounds(self):
         data = self.settings.data
         images, colors = data["images"], data["backgrounds"]
         name = self.current[0] if self.current else None
         rules = []
+
+        # main menu photo
         main_path = usable_image(images.get(MAIN_KEY))
         self.main_bg.set_image(main_path)
         if main_path:
-            rules.append("viewport.mainbg, list.mainbg, list.mainbg row { background-color: transparent; } list.mainbg label { color: #ffffff; text-shadow: 0 1px 3px #000000; }")
+            rules.append("viewport.mainbg, list.mainbg, list.mainbg row "
+                         "{ background-color: transparent; } "
+                         "list.mainbg label { color: #ffffff; text-shadow: 0 1px 3px #000000; }")
+
+        # chat: this chat's photo, else (if it has no colour) the all-chats photo
         chat_path = usable_image(images.get(name)) if name else None
         if not chat_path and name not in colors:
             chat_path = usable_image(images.get(CHATS_KEY))
         self.chat_bg.set_image(chat_path)
         if chat_path:
-            rules.append("textview.chatbg, textview.chatbg text { background-color: transparent; color: #ffffff; }")
+            rules.append("textview.chatbg, textview.chatbg text "
+                         "{ background-color: transparent; color: #ffffff; }")
         elif name in colors:
             color = colors[name]
-            rules.append(f"textview.chatbg, textview.chatbg text {{ background-color: {color}; color: {text_color_for(color)}; }}")
+            rules.append(f"textview.chatbg, textview.chatbg text "
+                         f"{{ background-color: {color}; color: {text_color_for(color)}; }}")
+
         try:
             self.css.load_from_data(" ".join(rules or ["/* default */"]).encode())
         except GLib.Error:
             pass
 
+    # ---------- Notifications ----------
     def notify(self, title, body, icon):
+        """Desktop notification through the standard freedesktop service (works on Mint)."""
         try:
             bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
             bus.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                      "org.freedesktop.Notifications", "Notify",
-                     GLib.Variant("(susssasa{sv}i)", (APP_NAME, 0, icon, title, body, [], {}, 6000)),
+                     GLib.Variant("(susssasa{sv}i)",
+                                  (APP_NAME, 0, icon, title, body, [], {}, 6000)),
                      None, Gio.DBusCallFlags.NONE, 1000, None, None, None)
         except (GLib.Error, TypeError):
             pass
 
     def _chat_is_visible(self, name):
-        return self.is_active() and self.notebook.get_current_page() == 1 and self.current is not None and self.current[0] == name
+        return (self.is_active() and self.notebook.get_current_page() == 1
+                and self.current is not None and self.current[0] == name)
 
     def receive_message(self, name, icon, text):
+        """A message arrives from `name`. Status decides notification and auto-reply."""
         if name not in self.buffers:
             self.buffers[name] = Gtk.TextBuffer()
         buf = self.buffers[name]
         buf.insert(buf.get_end_iter(), f"{name}: {text}\n")
+
         status = self.settings.data["status"]
         if not self._chat_is_visible(name) and self.settings.data["notify"].get(status, True):
             self.notify(f"Message from {name}", text, icon)
+
         reply = self.settings.data["auto"].get(status, "").strip()
         if reply:
             buf.insert(buf.get_end_iter(), f"Auto-reply sent ({status}): {reply}\n")
@@ -569,22 +630,27 @@ class Mintcord(Gtk.Window):
         self.receive_message(name, icon, random.choice(TEST_MESSAGES))
         return False
 
+    # ---------- Top right: status, send file, settings ----------
     def _build_top_right(self):
         box = Gtk.Box(spacing=4)
         self.status_image = Gtk.Image()
         box.pack_start(self.status_image, False, False, 6)
+
         send = Gtk.Button()
-        send.set_image(Gtk.Image.new_from_icon_name(theme_icon("mail-attachment", "document-open"), Gtk.IconSize.LARGE_TOOLBAR))
+        send.set_image(Gtk.Image.new_from_icon_name(
+            theme_icon("mail-attachment", "document-open"), Gtk.IconSize.LARGE_TOOLBAR))
         send.set_relief(Gtk.ReliefStyle.NONE)
         send.set_tooltip_text("Send a file")
         send.connect("clicked", self._on_send_file)
         box.pack_start(send, False, False, 0)
+
         cfg = Gtk.Button()
         cfg.set_image(Gtk.Image.new_from_icon_name(self.settings_icon, Gtk.IconSize.LARGE_TOOLBAR))
         cfg.set_relief(Gtk.ReliefStyle.NONE)
         cfg.set_tooltip_text("Settings")
         cfg.connect("clicked", self._open_settings)
         box.pack_start(cfg, False, False, 0)
+
         self._update_status_image()
         box.show_all()
         return box
@@ -609,12 +675,14 @@ class Mintcord(Gtk.Window):
 
     def _on_send_file(self, _button):
         if not self.current:
-            dlg = Gtk.MessageDialog(transient_for=self, message_type=Gtk.MessageType.INFO, buttons=Gtk.ButtonsType.OK, text="Open a chat first")
+            dlg = Gtk.MessageDialog(transient_for=self, message_type=Gtk.MessageType.INFO,
+                                    buttons=Gtk.ButtonsType.OK, text="Open a chat first")
             dlg.format_secondary_text("Double-click a user in the Users tab, then send a file.")
             dlg.run()
             dlg.destroy()
             return
-        dlg = Gtk.FileChooserDialog(title="Send a file", transient_for=self, action=Gtk.FileChooserAction.OPEN)
+        dlg = Gtk.FileChooserDialog(title="Send a file", transient_for=self,
+                                    action=Gtk.FileChooserAction.OPEN)
         dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Send", Gtk.ResponseType.OK)
         if dlg.run() == Gtk.ResponseType.OK:
             path = dlg.get_filename()
@@ -623,31 +691,37 @@ class Mintcord(Gtk.Window):
             except OSError:
                 size = "?"
             buf = self.buffers[self.current[0]]
-            buf.insert(buf.get_end_iter(), f"You sent a file: {os.path.basename(path)} ({size}){self._queued_suffix()}\n")
+            buf.insert(buf.get_end_iter(),
+                       f"You sent a file: {os.path.basename(path)} ({size}){self._queued_suffix()}\n")
             self.notebook.set_current_page(1)
         dlg.destroy()
 
+    # ---------- Users tab ----------
     def _build_users_tab(self):
         listbox = Gtk.ListBox()
-        listbox.set_activate_on_single_click(False)
+        listbox.set_activate_on_single_click(False)  # double-click opens chat
         listbox.get_style_context().add_class("mainbg")
         for name, icon, status in TEST_USERS:
             listbox.add(self._make_row(name, icon, status))
         listbox.connect("row-activated", self._on_row_activated)
+
         scroll = Gtk.ScrolledWindow()
         scroll.add(listbox)
-        scroll.get_child().get_style_context().add_class("mainbg")
+        scroll.get_child().get_style_context().add_class("mainbg")  # the viewport
         container, self.main_bg = with_background(scroll)
         return container
 
     def _make_row(self, name, icon, status):
         row = Gtk.ListBoxRow()
         row.user = (name, icon)
+
         events = Gtk.EventBox()
         events.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         box = Gtk.Box(spacing=10)
         box.set_border_width(6)
+
         box.pack_start(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR), False, False, 0)
+
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         n = Gtk.Label(xalign=0)
         n.set_markup(f"<b>{GLib.markup_escape_text(name)}</b>")
@@ -656,16 +730,22 @@ class Mintcord(Gtk.Window):
         text.pack_start(n, False, False, 0)
         text.pack_start(s, False, False, 0)
         box.pack_start(text, True, True, 0)
+
+        # Small "POV" button: simulates THIS user calling YOU
         pov = Gtk.Button(label="POV")
         pov.set_relief(Gtk.ReliefStyle.NONE)
         pov.set_tooltip_text(f"See their side: {name} calls you")
         pov.connect("clicked", lambda _b: self._open_call(name, icon, incoming=True))
         box.pack_end(pov, False, False, 0)
+
+        # Small "Msg" button: simulates THIS user messaging you in a few seconds
         msg = Gtk.Button(label="Msg")
         msg.set_relief(Gtk.ReliefStyle.NONE)
         msg.set_tooltip_text(f"Test: {name} sends you a message in {TEST_MESSAGE_DELAY} seconds")
         msg.connect("clicked", lambda _b: self._test_message(name, icon))
         box.pack_end(msg, False, False, 0)
+
+        # Call button only shows while the mouse is over the row
         call = Gtk.Button()
         call.set_image(Gtk.Image.new_from_icon_name("call-start", Gtk.IconSize.BUTTON))
         call.set_relief(Gtk.ReliefStyle.NONE)
@@ -673,15 +753,17 @@ class Mintcord(Gtk.Window):
         call.set_opacity(0)
         call.connect("clicked", lambda _b: self._open_call(name, icon, incoming=False))
         box.pack_end(call, False, False, 0)
+
         events.connect("enter-notify-event", lambda _w, _e: call.set_opacity(1))
         events.connect("leave-notify-event", self._on_leave, call)
+
         events.add(box)
         row.add(events)
         return row
 
     @staticmethod
     def _on_leave(_widget, event, call_button):
-        if event.detail == Gdk.NotifyType.INFERIOR:
+        if event.detail == Gdk.NotifyType.INFERIOR:  # just moved onto a child button
             return
         call_button.set_opacity(0)
 
@@ -689,14 +771,16 @@ class Mintcord(Gtk.Window):
         name, icon = row.user
         self._open_chat(name, icon)
 
+    # ---------- Calls ----------
     def _open_call(self, name, icon, incoming):
         if incoming:
             status = self.settings.data["status"]
             reply = self.settings.data["auto"].get(status, "").strip()
-            if reply:
+            if reply:  # automation: don't ring, answer with the status message
                 self._open_chat(name, icon)
                 buf = self.buffers[name]
-                buf.insert(buf.get_end_iter(), f"Missed call from {name} (you are {status}).\nAuto-reply sent: {reply}\n")
+                buf.insert(buf.get_end_iter(),
+                           f"Missed call from {name} (you are {status}).\nAuto-reply sent: {reply}\n")
                 return
         if self.call_win is not None:
             self.call_win.present()
@@ -705,21 +789,25 @@ class Mintcord(Gtk.Window):
         self.call_win.connect("destroy", lambda _w: setattr(self, "call_win", None))
         self.call_win.show_all()
 
+    # ---------- Chat tab ----------
     def _build_chat_tab(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         box.set_border_width(6)
+
         header = Gtk.Box(spacing=6)
         self.peer_icon = Gtk.Image.new_from_icon_name("user-info", Gtk.IconSize.LARGE_TOOLBAR)
         self.peer_label = Gtk.Label(label="Pick a user in the Users tab (double-click)")
         header.pack_start(self.peer_icon, False, False, 0)
         header.pack_start(self.peer_label, False, False, 0)
         box.pack_start(header, False, False, 0)
+
         self.text_view = Gtk.TextView(editable=False, wrap_mode=Gtk.WrapMode.WORD)
         self.text_view.get_style_context().add_class("chatbg")
         scroll = Gtk.ScrolledWindow()
         scroll.add(self.text_view)
         container, self.chat_bg = with_background(scroll)
         box.pack_start(container, True, True, 0)
+
         row = Gtk.Box(spacing=6)
         self.entry = Gtk.Entry()
         self.entry.connect("activate", self._on_send)
@@ -754,9 +842,11 @@ class Mintcord(Gtk.Window):
         buf.insert(buf.get_end_iter(), f"You: {text}{self._queued_suffix()}\n")
         self.entry.set_text("")
 
+    # ---------- Emojis tab ----------
     def _build_emoji_tab(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         box.set_border_width(6)
+
         flow = Gtk.FlowBox()
         flow.set_selection_mode(Gtk.SelectionMode.NONE)
         flow.set_max_children_per_line(6)
@@ -770,9 +860,11 @@ class Mintcord(Gtk.Window):
             btn.set_tooltip_text(name.replace("face-", ""))
             btn.connect("clicked", self._on_emoji, name)
             flow.add(btn)
+
         scroll = Gtk.ScrolledWindow()
         scroll.add(flow)
         box.pack_start(scroll, True, True, 0)
+
         self.emoji_status = Gtk.Label(label="Open a chat first (double-click a user)")
         box.pack_start(self.emoji_status, False, False, 0)
         return box
