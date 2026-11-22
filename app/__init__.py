@@ -1,0 +1,1 @@
+"""Mintcord desktop application package."""
