@@ -530,6 +530,14 @@ class Mintcord(Gtk.Window):
         super().__init__(title=APP_NAME)
         self.set_default_size(560, 520)
         self.set_icon_name("user-info")
+        icon_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "mintcord.svg"))
+        if not os.path.isfile(icon_path):
+            icon_path = "/opt/mintcord/assets/mintcord.svg"
+        if os.path.isfile(icon_path):
+            try:
+                self.set_icon_from_file(icon_path)
+            except GLib.Error:
+                pass
         self.settings = Settings()
         self.settings_icon = theme_icon("unity-tweak-tool", "preferences-system")
         self.buffers = {}    # user name -> Gtk.TextBuffer
