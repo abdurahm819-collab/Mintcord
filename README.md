@@ -30,6 +30,10 @@ If double-clicking does not run the script, right-click `install.sh`, choose Pro
 python3 app/main.py
 ```
 
+## Troubleshooting
+
+If the Mintcord window does not open, run `python3 app/main.py` in a terminal to see the startup error. Also check `~/.local/share/mintcord/logs/crash.log` for the saved traceback.
+
 ## Development checks
 
 ```bash
